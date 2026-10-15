@@ -11,7 +11,6 @@ Este passo a passo mostra como Instanciar, **um único template**, quatro servi�
 | **EC2** | Máquina virtual | Cliente de testes dentro da mesma VPC do Redis |
 
 O arquivo do template é o `database-stack-simples.yaml`. O código completo está no [Anexo](#anexo-código-completo-do-template), no final deste documento: basta copiar e salvar com esse nome.
-
 ---
 
 ## 1. Como o template está organizado
@@ -33,7 +32,6 @@ Um template CloudFormation tem seções. Este usa três:
 | `TableName` | `demo-tabela` | Nome da tabela DynamoDB |
 | `ReadCapacity` | `5` | Unidades de leitura (RCU) do DynamoDB |
 | `WriteCapacity` | `5` | Unidades de escrita (WCU) do DynamoDB |
-| `KeyName` | `vockey` | Key pair para acessar a EC2 por SSH |
 | `LatestAmiId` | (automático) | Imagem do Amazon Linux 2023 mais recente |
 
 ### Dependências entre recursos
@@ -48,20 +46,20 @@ O CloudFormation descobre a ordem de criação sozinho:
 
 ## 2. Criando a stack pelo console
 
-2. Abra o CloudFormation.
-3. Clique em **Create stack** e depois em **With new resources (standard)**.
-4. Em *Prerequisite - Prepare template*, deixe **Choose an existing template**.
-5. Em *Specify template*, escolha **Upload a template file**, clique em **Choose file** e selecione `database-stack-simples.yaml`. Clique em **Next**.
-6. Em *Stack name*, digite `demo-bancos`.
-7. A tela mostra os **parâmetros** do template. Você pode manter os padrões ou alterar, por exemplo, a senha ou a capacidade do DynamoDB. Clique em **Next**.
-8. Na tela *Configure stack options*, não precisa mudar nada. Clique em **Next**.
-9. Revise e clique em **Submit**.
-10. Acompanhe a criação:
+1. Na barra de busca, digite **CloudFormation** e abra o serviço.
+2. Clique em **Create stack** e depois em **With new resources (standard)**.
+3. Em *Prerequisite - Prepare template*, deixe **Choose an existing template**.
+4. Em *Specify template*, escolha **Upload a template file**, clique em **Choose file** e selecione `database-stack-simples.yaml`. Clique em **Next**.
+5. Em *Stack name*, digite `demo-bancos`.
+6. A tela mostra os **parâmetros** do template. Você pode manter os padrões ou alterar, por exemplo, a senha ou a capacidade do DynamoDB. Clique em **Next**.
+7. Na tela *Configure stack options*, não precisa mudar nada. Clique em **Next**.
+8. Revise e clique em **Submit**.
+9. Acompanhe a criação:
     - **Events:** mostra cada recurso sendo criado, na ordem das dependências.
     - **Resources:** lista os recursos e seus status.
     - **Outputs:** aparece quando a stack termina, com os endpoints.
 
-A stack estará pronta quando o status for **`CREATE_COMPLETE`**. O Aurora e o RDS são os mais demorados.
+A stack estará pronta quando o status for **`CREATE_COMPLETE`**. O Aurora e o RDS são os mais demorados, então espere de 15 a 20 minutos.
 
 ---
 
@@ -114,9 +112,22 @@ aws cloudformation describe-stack-events \
 
 ---
 
-## 5. Testando cada serviço
+## 4. Testando cada serviço
 
 Os endpoints aparecem na aba **Outputs** da stack (ou no comando `describe-stacks`).
+
+### Acessando a EC2 por SSH (opcional)
+
+O template cria um key pair para a EC2, e a chave privada fica guardada no Parameter Store. No **CloudShell**:
+
+1. Baixe a chave com o comando do output `GetKeyCommand` (ele salva o arquivo `demo-key.pem` e ajusta as permissões).
+2. Conecte com o comando do output `SshCommand`:
+
+```bash
+ssh -i demo-key.pem ec2-user@IP_PUBLICO
+```
+
+Se preferir não usar SSH, o **EC2 Instance Connect** (abaixo) abre um terminal no navegador, sem chave.
 
 ### Redis (pela EC2)
 
@@ -182,7 +193,7 @@ A tabela usa só a chave de partição `id` (tipo string). Todos os outros atrib
 
 ---
 
-## 6. Limpeza: apagando tudo
+## 5. Limpeza: apagando tudo
 
 Apagar a stack remove **todos** os recursos criados por ela, na ordem inversa das dependências. Como o template usa `DeletionPolicy: Delete`, nenhum snapshot final é criado.
 
@@ -200,18 +211,19 @@ Espere o `DELETE_COMPLETE` antes de criar a stack de novo, porque o nome da tabe
 
 ---
 
-## 7. Problemas comuns
+## 6. Problemas comuns
 
 | Sintoma | O que fazer |
 |---|---|
 | Stack em `ROLLBACK_COMPLETE` | Abra a aba **Events**, procure a linha com `CREATE_FAILED` e leia o motivo. Apague a stack e crie de novo após corrigir. |
-| Erro de `vockey` não encontrado | Troque o parâmetro `KeyName` por um key pair que exista na sua região. |
+| Não consigo a chave `.pem` da EC2 | Use o comando do output `GetKeyCommand` no CloudShell, ou acesse pelo **EC2 Instance Connect** no console, que não precisa de chave. |
 | Erro de classe de instância não permitida | O Learner Lab limita alguns tamanhos. A mensagem aparece em **Events**. |
 | `DELETE_FAILED` | Tente **Delete** de novo. O security group às vezes demora a ser liberado. |
+| Credenciais expiradas | O Learner Lab encerra a sessão. Clique em **Start Lab** de novo. |
 
 ---
 
-## 8. Resumo do que foi demonstrado
+## 7. Resumo do que foi demonstrado
 
 - **Provisionamento e configurações:** cinco serviços criados com infraestrutura como código.
 - **Dependências:** implícitas (`!Ref`, `!GetAtt`) e explícitas (`DependsOn`).
@@ -237,7 +249,7 @@ Parameters:
 
   DBPassword:
     Type: String
-    Default: Senha12345        
+    Default: Senha12345        # apenas para a demo; em producao usaria Secrets Manager
     NoEcho: true               # esconde o valor no console e nos logs
     MinLength: 8
     Description: Senha do usuario administrador
@@ -249,12 +261,12 @@ Parameters:
 
   AllowedCidr:
     Type: String
-    Default: 0.0.0.0/0        
+    Default: 0.0.0.0/0         # aberto so para facilitar a demo
     Description: Faixa de IPs com acesso aos bancos
 
   TableName:
     Type: String
-    Default: demo-tabela-dynamo
+    Default: demo-tabela
     Description: Nome da tabela DynamoDB
 
   ReadCapacity:
@@ -268,11 +280,6 @@ Parameters:
     Default: 5
     MinValue: 1
     Description: Unidades de escrita (WCU) provisionadas na tabela
-
-  KeyName:
-    Type: AWS::EC2::KeyPair::KeyName
-    Default: vockey            # key pair que o Learner Lab ja cria
-    Description: Key pair para acessar a EC2 por SSH
 
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -357,7 +364,7 @@ Resources:
         - AttributeName: id
           KeyType: HASH                # chave de particao
 
-  # --- ElastiCache (Redis): grupo de replicacao com 1 no.
+  # ElastiCache (Redis):
   #     Ele expoe o "Endpoint primario". Com NumCacheClusters >= 2 passa a ter
   #     replicas (Endpoint leitor) e failover automatico. ---
   RedisCache:
@@ -367,17 +374,25 @@ Resources:
       Engine: redis
       CacheNodeType: cache.t3.micro
       NumCacheClusters: 1
+      AutomaticFailoverEnabled: false  # failover exige 2+ nos; com 1 no precisa ficar desligado
       SecurityGroupIds:
         - !GetAtt SecurityGroup.GroupId
 
-  # --- EC2 da demo: o Redis nao tem acesso publico, entao precisamos de uma
+  # Key pair criado pelo proprio CloudFormation. A chave privada (.pem) fica
+  #     guardada no Parameter Store em /ec2/keypair/<KeyPairId> (veja o output GetKeyCommand) ---
+  DemoKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub "${AWS::StackName}-key"
+
+  # EC2 da demo: o Redis nao tem acesso publico, entao precisamos de uma
   #     maquina DENTRO da mesma VPC para conversar com ele ---
   DemoInstance:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.micro
       ImageId: !Ref LatestAmiId
-      KeyName: !Ref KeyName
+      KeyName: !Ref DemoKeyPair
       SecurityGroupIds:
         - !GetAtt SecurityGroup.GroupId
       Tags:
@@ -421,7 +436,11 @@ Outputs:
     Description: IP publico da EC2 da demo
     Value: !GetAtt DemoInstance.PublicIp
 
+  GetKeyCommand:
+    Description: Comando para baixar a chave privada da EC2 (rode no CloudShell)
+    Value: !Sub "aws ssm get-parameter --name /ec2/keypair/${DemoKeyPair.KeyPairId} --with-decryption --query Parameter.Value --output text > demo-key.pem && chmod 400 demo-key.pem"
+
   SshCommand:
-    Description: Comando para acessar a EC2 (use o .pem do vockey)
-    Value: !Sub "ssh -i labsuser.pem ec2-user@${DemoInstance.PublicIp}"
+    Description: Comando para acessar a EC2 (depois de baixar a chave)
+    Value: !Sub "ssh -i demo-key.pem ec2-user@${DemoInstance.PublicIp}"
 ```
